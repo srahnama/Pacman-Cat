@@ -1,0 +1,401 @@
+l<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man at Monash Clayton</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        h1, p {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pac-Man at Monash Clayton</h1>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <p>Level: <span id="level">1</span> | Score: <span id="score">0</span></p>
+    <p>Use arrow keys to move Pac-Man. Collect dots (10 points each), avoid ghosts and meteors, hitting white cats costs -1 point!</p>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelDisplay = document.getElementById('level');
+        const scoreDisplay = document.getElementById('score');
+
+        // Grid settings (20x20 grid, each cell is 20x20 pixels)
+        const gridSize = 20;
+        const gridWidth = canvas.width / gridSize; // 20 columns
+        const gridHeight = canvas.height / gridSize; // 20 rows
+
+        // Pac-Man starting position
+        let pacman = {
+            x: 9,
+            y: 15,
+            direction: 'right'
+        };
+
+        // Ghosts (starting positions and colors)
+        let ghosts = [
+            { x: 1, y: 1, color: '#f00' }, // Red ghost
+            { x: 18, y: 1, color: '#0ff' }, // Cyan ghost
+            { x: 1, y: 18, color: '#f0f' } // Purple ghost
+        ];
+
+        // Cats (starting positions and color)
+        let cats = [
+            { x: 3, y: 3, color: '#fff' }, // White cat
+            { x: 15, y: 7, color: '#fff' }, // White cat
+            { x: 7, y: 12, color: '#fff' }  // White cat
+        ];
+
+        // Meteors (falling hazards)
+        let meteors = [];
+
+        // Levels with different maps (walls and dots)
+        const levels = [
+            // Level 1: Simple Campus Centre layout
+            {
+                walls: [
+                    ...Array(gridWidth).fill().map((_, x) => ({ x, y: 0 })),
+                    ...Array(gridWidth).fill().map((_, x) => ({ x, y: gridHeight - 1 })),
+                    ...Array(gridHeight).fill().map((_, y) => ({ x: 0, y })),
+                    ...Array(gridHeight).fill().map((_, y) => ({ x: gridWidth - 1, y })),
+                    { x: 5, y: 5 }, { x: 5, y: 6 }, { x: 6, y: 5 }, { x: 6, y: 6 },
+                    { x: 13, y: 10 }, { x: 13, y: 11 }, { x: 14, y: 10 }, { x: 14, y: 11 }
+                ],
+                dots: [
+                    { x: 2, y: 2 }, { x: 3, y: 4 }, { x: 8, y: 8 }, { x: 10, y: 12 },
+                    { x: 15, y: 3 }, { x: 17, y: 15 }, { x: 4, y: 14 }
+                ]
+            },
+            // Level 2: Library and Food Court layout
+            {
+                walls: [
+                    ...Array(gridWidth).fill().map((_, x) => ({ x, y: 0 })),
+                    ...Array(gridWidth).fill().map((_, x) => ({ x, y: gridHeight - 1 })),
+                    ...Array(gridHeight).fill().map((_, y) => ({ x: 0, y })),
+                    ...Array(gridHeight).fill().map((_, y) => ({ x: gridWidth - 1, y })),
+                    { x: 2, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 2 }, { x: 3, y: 3 },
+                    { x: 15, y: 5 }, { x: 15, y: 6 }, { x: 16, y: 5 }, { x: 16, y: 6 },
+                    { x: 9, y: 9 }, { x: 10, y: 9 }
+                ],
+                dots: [
+                    { x: 1, y: 5 }, { x: 5, y: 10 }, { x: 7, y: 3 }, { x: 12, y: 7 },
+                    { x: 18, y: 2 }, { x: 14, y: 14 }, { x: 8, y: 15 }
+                ]
+            },
+            // Level 3: Sports Area maze
+            {
+                walls: [
+                    ...Array(gridWidth).fill().map((_, x) => ({ x, y: 0 })),
+                    ...Array(gridWidth).fill().map((_, x) => ({ x, y: gridHeight - 1 })),
+                    ...Array(gridHeight).fill().map((_, y) => ({ x: 0, y })),
+                    ...Array(gridHeight).fill().map((_, y) => ({ x: gridWidth - 1, y })),
+                    { x: 4, y: 4 }, { x: 4, y: 5 }, { x: 5, y: 4 },
+                    { x: 8, y: 8 }, { x: 8, y: 9 }, { x: 9, y: 8 },
+                    { x: 12, y: 12 }, { x: 12, y: 13 }, { x: 13, y: 12 },
+                    { x: 16, y: 16 }, { x: 16, y: 17 }, { x: 17, y: 16 }
+                ],
+                dots: [
+                    { x: 3, y: 7 }, { x: 6, y: 12 }, { x: 10, y: 5 }, { x: 14, y: 9 },
+                    { x: 17, y: 3 }, { x: 2, y: 15 }, { x: 9, y: 14 }
+                ]
+            }
+        ];
+
+        // Game state
+        let currentLevel = 0;
+        let dots = [];
+        let walls = [];
+        let score = 0;
+        let gameOver = false;
+
+        // Load level
+        function loadLevel(level) {
+            walls = levels[level].walls;
+            dots = [...levels[level].dots];
+            pacman.x = 9;
+            pacman.y = 15;
+            ghosts = [
+                { x: 1, y: 1, color: '#f00' },
+                { x: 18, y: 1, color: '#0ff' },
+                { x: 1, y: 18, color: '#f0f' }
+            ];
+            cats = [
+                { x: 3, y: 3, color: '#fff' },
+                { x: 15, y: 7, color: '#fff' },
+                { x: 7, y: 12, color: '#fff' }
+            ];
+            meteors = [];
+            levelDisplay.textContent = currentLevel + 1;
+            scoreDisplay.textContent = score;
+            gameOver = false;
+        }
+
+        // Draw the game
+        function draw() {
+            if (gameOver) return;
+
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw walls
+            ctx.fillStyle = '#00f';
+            walls.forEach(wall => {
+                ctx.fillRect(wall.x * gridSize, wall.y * gridSize, gridSize, gridSize);
+            });
+
+            // Draw dots
+            ctx.fillStyle = '#fff';
+            dots.forEach(dot => {
+                ctx.beginPath();
+                ctx.arc(dot.x * gridSize + gridSize / 2, dot.y * gridSize + gridSize / 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Pac-Man
+            ctx.fillStyle = '#ff0';
+            ctx.beginPath();
+            const mouthAngle = pacman.direction === 'right' || pacman.direction === 'left' ? 0.2 : 0.4;
+            const startAngle = pacman.direction === 'up' ? -1.2 : pacman.direction === 'down' ? 1.2 : pacman.direction === 'left' ? 3.2 : 0;
+            ctx.arc(pacman.x * gridSize + gridSize / 2, pacman.y * gridSize + gridSize / 2, gridSize / 2 - 2, startAngle - mouthAngle, startAngle + mouthAngle + Math.PI * 2);
+            ctx.lineTo(pacman.x * gridSize + gridSize / 2, pacman.y * gridSize + gridSize / 2);
+            ctx.fill();
+
+            // Draw ghosts
+            ghosts.forEach(ghost => {
+                ctx.fillStyle = ghost.color;
+                ctx.beginPath();
+                ctx.arc(ghost.x * gridSize + gridSize / 2, ghost.y * gridSize + gridSize / 2, gridSize / 2 - 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(ghost.x * gridSize + gridSize / 2 - 4, ghost.y * gridSize + gridSize / 2 - 2, 2, 0, Math.PI * 2);
+                ctx.arc(ghost.x * gridSize + gridSize / 2 + 4, ghost.y * gridSize + gridSize / 2 - 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw cats as white triangles
+            cats.forEach(cat => {
+                ctx.fillStyle = cat.color;
+                ctx.beginPath();
+                ctx.moveTo(cat.x * gridSize + gridSize / 2, cat.y * gridSize + 2); // Top point
+                ctx.lineTo(cat.x * gridSize + 2, cat.y * gridSize + gridSize - 2); // Bottom-left
+                ctx.lineTo(cat.x * gridSize + gridSize - 2, cat.y * gridSize + gridSize - 2); // Bottom-right
+                ctx.closePath();
+                ctx.fill();
+            });
+
+            // Draw meteors
+            ctx.fillStyle = '#ff4500';
+            meteors.forEach(meteor => {
+                ctx.beginPath();
+                ctx.arc(meteor.x * gridSize + gridSize / 2, meteor.y * gridSize + gridSize / 2, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Check collision with walls, dots, ghosts, meteors, or cats
+        function checkCollision(x, y) {
+            // Check walls
+            for (let wall of walls) {
+                if (wall.x === x && wall.y === y) return true;
+            }
+            // Check dots
+            for (let i = 0; i < dots.length; i++) {
+                if (dots[i].x === x && dots[i].y === y) {
+                    dots.splice(i, 1);
+                    score += 10;
+                    scoreDisplay.textContent = score;
+                    if (dots.length === 0) {
+                        currentLevel++;
+                        if (currentLevel < levels.length) {
+                            loadLevel(currentLevel);
+                        } else {
+                            alert('You win! All levels completed! Final Score: ' + score);
+                            currentLevel = 0;
+                            score = 0;
+                            loadLevel(currentLevel);
+                        }
+                    }
+                    return false;
+                }
+            }
+            // Check ghosts
+            for (let ghost of ghosts) {
+                if (ghost.x === x && ghost.y === y) {
+                    gameOver = true;
+                    alert('Game Over! You hit a ghost! Final Score: ' + score);
+                    currentLevel = 0;
+                    score = 0;
+                    loadLevel(currentLevel);
+                    return true;
+                }
+            }
+            // Check meteors
+            for (let meteor of meteors) {
+                if (meteor.x === x && meteor.y === y) {
+                    gameOver = true;
+                    alert('Game Over! A meteor hit you! Final Score: ' + score);
+                    currentLevel = 0;
+                    score = 0;
+                    loadLevel(currentLevel);
+                    return true;
+                }
+            }
+            // Check cats
+            for (let cat of cats) {
+                if (cat.x === x && cat.y === y) {
+                    score -= 1;
+                    scoreDisplay.textContent = score;
+                    return false; // Cats don’t end the game, just reduce score
+                }
+            }
+            return false;
+        }
+
+        // Move ghosts randomly
+        function moveGhosts() {
+            if (gameOver) return;
+            ghosts.forEach(ghost => {
+                const directions = [
+                    { x: ghost.x + 1, y: ghost.y },
+                    { x: ghost.x - 1, y: ghost.y },
+                    { x: ghost.x, y: ghost.y + 1 },
+                    { x: ghost.x, y: ghost.y - 1 }
+                ];
+                const validMoves = directions.filter(dir => 
+                    dir.x >= 0 && dir.x < gridWidth && 
+                    dir.y >= 0 && dir.y < gridHeight && 
+                    !walls.some(wall => wall.x === dir.x && wall.y === dir.y)
+                );
+                if (validMoves.length > 0) {
+                    const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+                    ghost.x = move.x;
+                    ghost.y = move.y;
+                }
+                if (ghost.x === pacman.x && ghost.y === pacman.y) {
+                    gameOver = true;
+                    alert('Game Over! A ghost caught you! Final Score: ' + score);
+                    currentLevel = 0;
+                    score = 0;
+                    loadLevel(currentLevel);
+                }
+            });
+            draw();
+        }
+
+        // Move cats randomly
+        function moveCats() {
+            if (gameOver) return;
+            cats.forEach(cat => {
+                const directions = [
+                    { x: cat.x + 1, y: cat.y },
+                    { x: cat.x - 1, y: cat.y },
+                    { x: cat.x, y: cat.y + 1 },
+                    { x: cat.x, y: cat.y - 1 }
+                ];
+                const validMoves = directions.filter(dir => 
+                    dir.x >= 0 && dir.x < gridWidth && 
+                    dir.y >= 0 && dir.y < gridHeight && 
+                    !walls.some(wall => wall.x === dir.x && wall.y === dir.y)
+                );
+                if (validMoves.length > 0) {
+                    const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+                    cat.x = move.x;
+                    cat.y = move.y;
+                    console.log(`Cat moved to: (${cat.x}, ${cat.y})`); // Debugging
+                }
+                if (cat.x === pacman.x && cat.y === pacman.y) {
+                    score -= 1;
+                    scoreDisplay.textContent = score;
+                }
+            });
+            draw();
+        }
+
+        // Spawn meteors
+        function spawnMeteor() {
+            if (gameOver) return;
+            const x = Math.floor(Math.random() * gridWidth);
+            meteors.push({ x, y: 0 });
+        }
+
+        // Move meteors downward
+        function moveMeteors() {
+            if (gameOver) return;
+            meteors = meteors.filter(meteor => meteor.y < gridHeight - 1);
+            meteors.forEach(meteor => {
+                meteor.y++;
+                if (meteor.x === pacman.x && meteor.y === pacman.y) {
+                    gameOver = true;
+                    alert('Game Over! A meteor hit you! Final Score: ' + score);
+                    currentLevel = 0;
+                    score = 0;
+                    loadLevel(currentLevel);
+                }
+            });
+            draw();
+        }
+
+        // Handle Pac-Man movement
+        document.addEventListener('keydown', (e) => {
+            if (gameOver) return;
+
+            let newX = pacman.x;
+            let newY = pacman.y;
+
+            switch (e.key) {
+                case 'ArrowUp':
+                    newY--;
+                    pacman.direction = 'up';
+                    break;
+                case 'ArrowDown':
+                    newY++;
+                    pacman.direction = 'down';
+                    break;
+                case 'ArrowLeft':
+                    newX--;
+                    pacman.direction = 'left';
+                    break;
+                case 'ArrowRight':
+                    newX++;
+                    pacman.direction = 'right';
+                    break;
+            }
+
+            if (newX >= 0 && newX < gridWidth && newY >= 0 && newY < gridHeight && !checkCollision(newX, newY)) {
+                pacman.x = newX;
+                pacman.y = newY;
+            }
+
+            draw();
+        });
+
+        // Initialize game
+        loadLevel(currentLevel);
+        draw();
+
+        // Move ghosts every 500ms
+        setInterval(moveGhosts, 500);
+
+        // Move cats every 500ms
+        setInterval(moveCats, 500);
+
+        // Spawn meteors every 2-4 seconds
+        setInterval(spawnMeteor, Math.random() * 2000 + 2000);
+
+        // Move meteors every 300ms
+        setInterval(moveMeteors, 300);
+    </script>
+</body>
+</html>
